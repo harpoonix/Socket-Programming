@@ -11,6 +11,9 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <chrono>
+#include <thread>
+
 
 #include <arpa/inet.h>
 using namespace std;
@@ -36,8 +39,8 @@ int main(int argc, char *argv[])
 	char s[INET6_ADDRSTRLEN];
     FILE* file = fopen(argv[2], "w");
 
-	if (argc != 3) {
-	    cerr << "usage: ./SimpleFTPClientPhase1 ipaddr:port filename\n";
+	if (argc != 4) {
+	    cerr << "usage: ./SimpleFTPClientPhase1 ipaddr:port filename receiveInterval\nNote: receiveInterval x specifies the rate to be 1000 bytes per x milliseconds\n";
 	    exit(1);
 	}
 
@@ -92,6 +95,7 @@ int main(int argc, char *argv[])
 		}
 		break;
 	}
+	cout << "sent" << endl;
 	int total = 0;
 	while (true){
         bzero(buf, CHUNK_SIZE);
@@ -102,6 +106,7 @@ int main(int argc, char *argv[])
         }
         fwrite(buf, sizeof(char), numbytes, file);
 		total += numbytes;
+		this_thread::sleep_for(chrono::milliseconds(stoi(argv[3])));
     }
 
 	buf[numbytes] = '\0';
