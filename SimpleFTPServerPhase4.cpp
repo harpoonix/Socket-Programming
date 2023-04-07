@@ -1,187 +1,286 @@
-	/*
-** server.c -- a stream socket server demo
+/*
+** pollserver.c -- a cheezy multiperson chat server
 */
 
 #include <iostream>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
-#include <errno.h>
-#include <cstring>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <netdb.h>
 #include <arpa/inet.h>
-#include <sys/wait.h>
-#include <sys/stat.h>
-#include <signal.h>
+#include <netdb.h>
+#include <poll.h>
+#include <vector>
 using namespace std;
 
-#define BACKLOG 10	 // how many pending connections queue will hold
-#define CHUNK_SIZE 512
+#define CHUNK_SIZE 1024
 
-bool is_correct_command(char * cmd){
+// Get sockaddr, IPv4 or IPv6:
+void *get_in_addr(sockaddr *sa)
+{
+    if (sa->sa_family == AF_INET) {
+        return &(((sockaddr_in*)sa)->sin_addr);
+    }
+
+    return &(((sockaddr_in6*)sa)->sin6_addr);
+}
+
+struct connection {
+    pollfd poller;
+    bool getfile;
+};
+
+// Checks if the command is either a GET or a PUT. Nothing else is allowed!
+bool is_correct_command(char * cmd, bool is_get){
 	const char get[] = "get ";
+	const char put[] = "put ";
 	for (int i=0; i<4; i++) {
-		if (cmd[i]=='\0' || cmd[i]!=get[i]){
-			return false;
+		if (is_get){
+			if (cmd[i]=='\0' || (cmd[i]!=get[i])){
+				return false;
+			}
+		}
+		else {
+			if (cmd[i]=='\0' || (cmd[i]!=put[i])){
+				return false;
+			}
 		}
 	}
 	return true;
 }
 
-void sigchld_handler(int s)
+// Return the index of the char array which is null
+
+// Return a listening socket
+int get_listener_socket(char* port)
 {
-	(void)s; // quiet unused variable warning
+    int listener;     // Listening socket descriptor
+    int yes=1;        // For setsockopt() SO_REUSEADDR, below
+    int rv;
 
-	// waitpid() might overwrite errno, so we save and restore it:
-	int saved_errno = errno;
+    addrinfo hints, *ai, *p;
 
-	while(waitpid(-1, NULL, WNOHANG) > 0);
+    // Get us a socket and bind it
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE;
+    if ((rv = getaddrinfo(NULL, port, &hints, &ai)) != 0) {
+        fprintf(stderr, "selectserver: %s\n", gai_strerror(rv));
+        exit(1);
+    }
+    
+    for(p = ai; p != NULL; p = p->ai_next) {
+        listener = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+        if (listener < 0) { 
+            continue;
+        }
+        
+        // Lose the pesky "address already in use" error message
+        setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
 
-	errno = saved_errno;
-}
+        if (bind(listener, p->ai_addr, p->ai_addrlen) < 0) {
+            close(listener);
+            continue;
+        }
 
+        break;
+    }
 
-// get sockaddr, IPv4 or IPv6:
-void *get_in_addr(struct sockaddr *sa)
-{
-	if (sa->sa_family == AF_INET) {
-		return &(((struct sockaddr_in*)sa)->sin_addr);
-	}
+    // If we got here, it means we didn't get bound
+    if (p == NULL) {
+        return -1;
+    }
+    else {
+        cout << "Bind succesful: "<< p->ai_addr << endl;
+    }
 
-	return &(((struct sockaddr_in6*)sa)->sin6_addr);
-}
+    freeaddrinfo(ai); // All done with this
 
-int main(int argc, char* argv[])
-{
-	if (argc!=2){
-		cerr << "Usage: ./SimpleFTPServerPhase2 portNum" << endl;
-		exit(1);
-	}
-	int sockfd, new_fd;  // listen on sock_fd, new connection on new_fd
-	struct addrinfo hints, *servinfo, *p;
-	struct sockaddr_storage their_addr; // connector's address information
-	socklen_t sin_size;
-	struct sigaction sa;
-	int yes=1;
-	char s[INET6_ADDRSTRLEN];
-	char file_data[CHUNK_SIZE];
-	FILE* file;
-	
-	int rv;
-
-	memset(&hints, 0, sizeof hints);
-	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_flags = AI_PASSIVE; // use my IP
-
-	if ((rv = getaddrinfo(NULL, argv[1], &hints, &servinfo)) != 0) {
-		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
-		return 1;
-	}
-
-	// loop through all the results and bind to the first we can
-	for(p = servinfo; p != NULL; p = p->ai_next) {
-		if ((sockfd = socket(p->ai_family, p->ai_socktype,
-				p->ai_protocol)) == -1) {
-			perror("server: socket");
-			continue;
-		}
-
-		if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes,
-				sizeof(int)) == -1) {
-			perror("setsockopt");
-			exit(1);
-		}
-
-		if (bind(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
-			close(sockfd);
-			perror("server: bind");
-			continue;
-		}
-
-		break;
-	}
-
-	freeaddrinfo(servinfo); // all done with this structure
-
-	if (p == NULL)  {
-		cerr<< "server: failed to bind on given port\n";
-		exit(2);
-	}
-	else {
-		cout << "Bind successful" << p->ai_addr << endl;
-	}
-
-	if (listen(sockfd, BACKLOG) == -1) {
-		perror("listen");
-		exit(1);
-	}
-	else {
+    // Listen
+    if (listen(listener, 10) == -1) {
+        return -1;
+    }
+    else {
 		cout << "Listen successful" << endl;
 	}
 
 	cout << "Server.... waiting for connections" <<endl;
 
-	// sa.sa_handler = sigchld_handler; // reap all dead processes
-	// sigemptyset(&sa.sa_mask);
-	// sa.sa_flags = SA_RESTART;
-	// if (sigaction(SIGCHLD, &sa, NULL) == -1) {
-	// 	perror("sigaction");
-	// 	exit(1);
-	// }
-
-	while(1) {  // main accept() loop
-		sin_size = sizeof their_addr;
-		new_fd = accept(sockfd, (struct sockaddr *)&their_addr, &sin_size);
-
-		if (!fork()){
-			cout << "New connection request from " << (sockaddr*) &their_addr << endl;
-			if (new_fd == -1) {
-				perror("accept");
-				continue;
-			}
-
-			inet_ntop(their_addr.ss_family,
-				get_in_addr((struct sockaddr *)&their_addr),
-				s, sizeof s);
-			cout << ("server: got connection from ") << s <<endl;
-			char filename[80];
-			int is_file = recv(new_fd, filename, 80, 0);
-
-			if (!is_correct_command(filename)){
-				cout << "UnknownCmd\n";
-				cout << filename << endl;
-				cerr << "The command should be of the form: get <fileName>\n";
-				close(new_fd);
-				exit(3);
-			}
-			cout << "File Requested: "<<filename + 4 << endl;
-			file = fopen(filename + 4, "rb");
-			if (file==NULL){
-				cout << "FileTransferFail\n";
-				cerr << "File does not exist" <<endl;
-				close(new_fd);
-				exit(3);
-			}
-			ssize_t num_bytes = 0;
-			ssize_t total = 0;
-			
-			while ((num_bytes = fread(file_data, sizeof (char), CHUNK_SIZE, file)) > 0){
-				int sent = send(new_fd, file_data, num_bytes, MSG_WAITALL);
-				if (sent == -1) {
-					cerr << "Error in sending" << endl;
-					exit(3);
-				}
-				// cout << sent << endl;
-				total+=sent;
-			}
-			cout<<"Transfer Done: "<<total <<" bytes" <<endl;
-		}
-		sleep(1);
-		close(new_fd);  // parent doesn't need this
-	}
-
-	return 0;
+    return listener;
 }
+
+// Add a new file descriptor to the set
+void add_to_pfds(vector<connection> &pfds, int &newfd, int *fd_count, int *fd_size)
+{
+    connection* newconnect = new connection;
+    pollfd* newpollfd = new pollfd;
+    newpollfd->events = POLLIN;
+    newpollfd->fd = newfd;
+    newconnect->poller = *newpollfd;
+    newconnect->getfile = 0;
+    pfds.push_back(*newconnect);
+
+    (*fd_count)++;
+}
+
+// Remove an index from the set
+void del_from_pfds(vector<connection> &pfds, int i, int *fd_count)
+{
+    // Copy the one from the end over this one
+    pfds[i] = pfds[*fd_count-1];
+
+    (*fd_count)--;
+}
+
+// Main
+int main(int argc, char* argv[])
+{
+    if (argc!=2){
+		cerr << "Usage: ./SimpleFTPServerPhase3 portNum" << endl;
+		exit(1);
+	}
+    int listener;     // Listening socket descriptor
+
+    int newfd;        // Newly accept()ed socket descriptor
+    sockaddr_storage remoteaddr; // Client address
+    socklen_t addrlen;
+
+    char file_data[CHUNK_SIZE];    // Buffer for client data
+
+    char remoteIP[INET6_ADDRSTRLEN];
+
+    // Start off with room for 5 connections
+    // (We'll realloc as necessary)
+    int fd_count = 0;
+    int fd_size = 5;
+
+    // Set up and get a listening socket
+    listener = get_listener_socket(argv[1]);
+
+    if (listener == -1) {
+        fprintf(stderr, "error getting listening socket\n");
+        exit(1);
+    }
+
+    vector<connection> pfds;
+    pfds.resize(1);
+    // Add the listener to set
+    pfds[0].poller.fd = listener;
+    pfds[0].poller.events = POLLIN; // Report ready to read on incoming connection
+    pfds[0].getfile = 0;
+    fd_count = 1; // For the listener
+
+    // Main loop
+    while(true) {
+        int poll_count = poll(&pfds[0].poller, fd_count, -1);
+
+        if (poll_count == -1) {
+            perror("poll");
+            exit(1);
+        }
+
+        // Run through the existing connections looking for data to read
+        for(int i = 0; i < fd_count; i++) {
+
+            // Check if someone's ready to read
+            if (pfds[i].poller.revents & POLLIN) { // We got one!!
+
+                if (pfds[i].poller.fd == listener) {
+                    // If listener is ready to read, handle new connection
+
+                    addrlen = sizeof remoteaddr;
+                    newfd = accept(listener,
+                        (sockaddr *)&remoteaddr,
+                        &addrlen);
+
+                    if (newfd == -1) {
+                        perror("accept");
+                    } else {
+                        add_to_pfds(pfds, newfd, &fd_count, &fd_size);
+
+                        printf("pollserver: new connection from %s on "
+                            "socket %d\n",
+                            inet_ntop(remoteaddr.ss_family,
+                                get_in_addr((sockaddr*)&remoteaddr),
+                                remoteIP, INET6_ADDRSTRLEN),
+                            newfd);
+                    }
+                } else {
+                    if (!pfds[i].getfile){
+                        // If not the listener, we're just a regular client
+                        char filename[80];
+                        int nbytes = recv(pfds[i].poller.fd, filename, 80, 0);
+
+                        int sender_fd = pfds[i].poller.fd;
+
+                        if (nbytes <= 0) {
+                            // Got error or connection closed by client
+                            if (nbytes == 0) {
+                                // Connection closed
+                                printf("pollserver: socket %d hung up\n", sender_fd);
+                            } else {
+                                perror("recv");
+                            }
+
+                            close(pfds[i].poller.fd); // Bye!
+
+                            del_from_pfds(pfds, i, &fd_count);
+
+                        } else {
+                            // We got some good data from a client
+                            cout << "Received data from client" << endl;
+                            if (!is_correct_command(filename, true) && is_correct_command(filename, false)){
+                                cout << "UnknownCmd\n";
+                                cout << filename << endl;
+                                cerr << "The command should be of the form: get/put <fileName>\n";
+                                close(pfds[i].poller.fd);
+                                del_from_pfds(pfds, i, &fd_count);
+                                exit(3);
+                            }
+                            if (filename[0]=='g'){
+                                cout << "File Requested: "<< filename + 4 << endl;
+                                FILE* file = fopen(filename + 4, "rb");
+                                if (file==NULL){
+                                    cout << "FileTransferFail\n";
+                                    cerr << "File does not exist" <<endl;
+                                    close(pfds[i].poller.fd);
+                                    del_from_pfds(pfds, i, &fd_count);
+                                    exit(3);
+                                }
+
+                                // Now send the file
+                                ssize_t num_bytes = 0;
+                                ssize_t total = 0;
+                                while ((num_bytes = fread(file_data, sizeof (char), CHUNK_SIZE, file)) > 0){
+                                    int sent = send(pfds[i].poller.fd, file_data, num_bytes, MSG_WAITALL);
+                                    if (sent == -1) {
+                                        cerr << "Error in sending" << endl;
+                                        exit(3);
+                                    }
+                                    // cout << sent << endl;
+                                    total+=sent;
+                                }
+                                cout<<"Transfer Done: "<<total <<" bytes" <<endl;
+                                close(pfds[i].poller.fd);
+                                del_from_pfds(pfds, i, &fd_count);
+                            }
+                            else if (filename[0]=='p'){
+                                pfds[i].getfile = true;
+                            }
+                        }
+                    }
+                    else {
+                        char buf[CHUNK_SIZE];
+                        
+                    }
+                } // END handle data from client
+            } // END got ready-to-read from poll()
+        } // END looping through file descriptors
+    } // END for(;;)--and you thought it would never end!
+    
+    return 0;
+}
+

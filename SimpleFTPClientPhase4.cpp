@@ -11,6 +11,9 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <chrono>
+#include <thread>
+
 
 #include <arpa/inet.h>
 using namespace std;
@@ -34,10 +37,10 @@ int main(int argc, char *argv[])
 	struct addrinfo hints, *servinfo, *p;
 	int rv;
 	char s[INET6_ADDRSTRLEN];
-    FILE* file = fopen(argv[2], "w");
+    FILE* file = fopen(argv[3], "w");
 
-	if (argc != 3) {
-	    cerr << "usage: ./SimpleFTPClientPhase1 ipaddr:port filename\n";
+	if (argc != 5) {
+	    cerr << "usage: ./SimpleFTPClientPhase1 ipaddr:port op filename receiveInterval\nNote: receiveInterval x specifies the rate to be 1000 bytes per x milliseconds\nop is either get or put.\n";
 	    exit(1);
 	}
 
@@ -81,8 +84,8 @@ int main(int argc, char *argv[])
 
 	freeaddrinfo(servinfo); // all done with this structure
 
-	char get[] = "get ";
-	char* name = strcat(get, argv[2]);
+	char* op = strcat(argv[2], " ");
+	char* name = strcat(op, argv[3]);
 	cout << name << endl;
 	while (true){
 		int fileNameSent = send(sockfd, name, 85, 0);
@@ -92,6 +95,7 @@ int main(int argc, char *argv[])
 		}
 		break;
 	}
+	cout << "sent" << endl;
 	int total = 0;
 	while (true){
         bzero(buf, CHUNK_SIZE);
@@ -102,6 +106,7 @@ int main(int argc, char *argv[])
         }
         fwrite(buf, sizeof(char), numbytes, file);
 		total += numbytes;
+		this_thread::sleep_for(chrono::milliseconds(stoi(argv[3])));
     }
 
 	buf[numbytes] = '\0';
