@@ -28,8 +28,8 @@ void *get_in_addr(sockaddr *sa)
 }
 
 struct connection {
-    pollfd poller;
     bool getfile;
+    char* filename;
 };
 
 // Checks if the command is either a GET or a PUT. Nothing else is allowed!
@@ -113,24 +113,26 @@ int get_listener_socket(char* port)
 }
 
 // Add a new file descriptor to the set
-void add_to_pfds(vector<connection> &pfds, int &newfd, int *fd_count, int *fd_size)
+void add_to_pfds(vector<pollfd> &pfds, vector <connection> &connections, int &newfd, int *fd_count, int *fd_size)
 {
-    connection* newconnect = new connection;
     pollfd* newpollfd = new pollfd;
     newpollfd->events = POLLIN;
     newpollfd->fd = newfd;
-    newconnect->poller = *newpollfd;
+    pfds.push_back(*newpollfd);
+    connection* newconnect = new connection;
     newconnect->getfile = 0;
-    pfds.push_back(*newconnect);
+    newconnect->filename = NULL;
+    connections.push_back(*newconnect);
 
     (*fd_count)++;
 }
 
 // Remove an index from the set
-void del_from_pfds(vector<connection> &pfds, int i, int *fd_count)
+void del_from_pfds(vector<pollfd> &pfds, vector<connection> &cnn, int i, int *fd_count)
 {
     // Copy the one from the end over this one
     pfds[i] = pfds[*fd_count-1];
+    cnn[i] = cnn[*fd_count - 1];
 
     (*fd_count)--;
 }
@@ -165,17 +167,20 @@ int main(int argc, char* argv[])
         exit(1);
     }
 
-    vector<connection> pfds;
+    vector<pollfd> pfds;
     pfds.resize(1);
     // Add the listener to set
-    pfds[0].poller.fd = listener;
-    pfds[0].poller.events = POLLIN; // Report ready to read on incoming connection
-    pfds[0].getfile = 0;
+    pfds[0].fd = listener;
+    pfds[0].events = POLLIN; // Report ready to read on incoming connection
+    vector<connection> connections;
+    connections.resize(1);
+    connections[0].getfile = 0;
+    connections[0].filename = NULL;
     fd_count = 1; // For the listener
 
     // Main loop
     while(true) {
-        int poll_count = poll(&pfds[0].poller, fd_count, -1);
+        int poll_count = poll(&pfds[0], fd_count, -1);
 
         if (poll_count == -1) {
             perror("poll");
@@ -186,9 +191,9 @@ int main(int argc, char* argv[])
         for(int i = 0; i < fd_count; i++) {
 
             // Check if someone's ready to read
-            if (pfds[i].poller.revents & POLLIN) { // We got one!!
+            if (pfds[i].revents & POLLIN) { // We got one!!
 
-                if (pfds[i].poller.fd == listener) {
+                if (pfds[i].fd == listener) {
                     // If listener is ready to read, handle new connection
 
                     addrlen = sizeof remoteaddr;
@@ -199,7 +204,7 @@ int main(int argc, char* argv[])
                     if (newfd == -1) {
                         perror("accept");
                     } else {
-                        add_to_pfds(pfds, newfd, &fd_count, &fd_size);
+                        add_to_pfds(pfds, connections, newfd, &fd_count, &fd_size);
 
                         printf("pollserver: new connection from %s on "
                             "socket %d\n",
@@ -209,12 +214,14 @@ int main(int argc, char* argv[])
                             newfd);
                     }
                 } else {
-                    if (!pfds[i].getfile){
+                    cout << "Not the listener" << endl;
+                    if (!connections[i].getfile){
+                        cout << "Getting command" << endl;
                         // If not the listener, we're just a regular client
                         char filename[80];
-                        int nbytes = recv(pfds[i].poller.fd, filename, 80, 0);
+                        int nbytes = recv(pfds[i].fd, filename, 80, 0);
 
-                        int sender_fd = pfds[i].poller.fd;
+                        int sender_fd = pfds[i].fd;
 
                         if (nbytes <= 0) {
                             // Got error or connection closed by client
@@ -225,19 +232,19 @@ int main(int argc, char* argv[])
                                 perror("recv");
                             }
 
-                            close(pfds[i].poller.fd); // Bye!
+                            close(pfds[i].fd); // Bye!
 
-                            del_from_pfds(pfds, i, &fd_count);
+                            del_from_pfds(pfds, connections, i, &fd_count);
 
                         } else {
                             // We got some good data from a client
-                            cout << "Received data from client" << endl;
-                            if (!is_correct_command(filename, true) && is_correct_command(filename, false)){
+                            cout << "Received data from client " << filename << endl;
+                            if (!is_correct_command(filename, true) && !is_correct_command(filename, false)){
                                 cout << "UnknownCmd\n";
                                 cout << filename << endl;
                                 cerr << "The command should be of the form: get/put <fileName>\n";
-                                close(pfds[i].poller.fd);
-                                del_from_pfds(pfds, i, &fd_count);
+                                close(pfds[i].fd);
+                                del_from_pfds(pfds, connections, i, &fd_count);
                                 exit(3);
                             }
                             if (filename[0]=='g'){
@@ -246,8 +253,8 @@ int main(int argc, char* argv[])
                                 if (file==NULL){
                                     cout << "FileTransferFail\n";
                                     cerr << "File does not exist" <<endl;
-                                    close(pfds[i].poller.fd);
-                                    del_from_pfds(pfds, i, &fd_count);
+                                    close(pfds[i].fd);
+                                    del_from_pfds(pfds, connections, i, &fd_count);
                                     exit(3);
                                 }
 
@@ -255,7 +262,8 @@ int main(int argc, char* argv[])
                                 ssize_t num_bytes = 0;
                                 ssize_t total = 0;
                                 while ((num_bytes = fread(file_data, sizeof (char), CHUNK_SIZE, file)) > 0){
-                                    int sent = send(pfds[i].poller.fd, file_data, num_bytes, MSG_WAITALL);
+                                    // cout << "Read "<< num_bytes << endl;
+                                    int sent = send(pfds[i].fd, file_data, num_bytes, MSG_WAITALL);
                                     if (sent == -1) {
                                         cerr << "Error in sending" << endl;
                                         exit(3);
@@ -264,17 +272,40 @@ int main(int argc, char* argv[])
                                     total+=sent;
                                 }
                                 cout<<"Transfer Done: "<<total <<" bytes" <<endl;
-                                close(pfds[i].poller.fd);
-                                del_from_pfds(pfds, i, &fd_count);
+                                close(pfds[i].fd);
+                                del_from_pfds(pfds, connections, i, &fd_count);
                             }
                             else if (filename[0]=='p'){
-                                pfds[i].getfile = true;
+                                connections[i].getfile = true;
+                                connections[i].filename = filename + 4;
                             }
                         }
                     }
                     else {
+                        FILE* file = fopen(connections[i].filename, "w");
+                        if (file==NULL){
+                            cerr << "File " << connections[i].filename << " does not exist" << endl;
+                            exit(3);
+                        }
                         char buf[CHUNK_SIZE];
-                        
+                        int total = 0;
+                        int numbytes = 0;
+                        cout << connections[i].filename << " being received" << endl;
+                        while (true){
+                            bzero(buf, CHUNK_SIZE);
+                            numbytes = recv(pfds[i].fd, buf, CHUNK_SIZE, 0);
+                            cout << numbytes << endl;
+                            if (numbytes <= 0){
+                                break;
+                            }
+                            cout << buf << endl;
+                            fwrite(buf, sizeof(char), numbytes, file);
+                            total+=numbytes;
+                        }
+                        cout << "Total "<< total << " received" << endl;
+                        fclose(file);
+                        close(pfds[i].fd);
+                        del_from_pfds(pfds, connections, i, &fd_count);
                     }
                 } // END handle data from client
             } // END got ready-to-read from poll()

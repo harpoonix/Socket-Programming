@@ -37,10 +37,9 @@ int main(int argc, char *argv[])
 	struct addrinfo hints, *servinfo, *p;
 	int rv;
 	char s[INET6_ADDRSTRLEN];
-    FILE* file = fopen(argv[3], "w");
 
 	if (argc != 5) {
-	    cerr << "usage: ./SimpleFTPClientPhase1 ipaddr:port op filename receiveInterval\nNote: receiveInterval x specifies the rate to be 1000 bytes per x milliseconds\nop is either get or put.\n";
+	    cerr << "usage: ./SimpleFTPClientPhase1 ipaddr:port op filename receiveInterval\nNote: receiveInterval x specifies the rate to be 1000 bytes per x milliseconds\nop is either get or put. \nThat means it would take x seconds to receive 1 MB data\n";
 	    exit(1);
 	}
 
@@ -84,9 +83,12 @@ int main(int argc, char *argv[])
 
 	freeaddrinfo(servinfo); // all done with this structure
 
-	char* op = strcat(argv[2], " ");
+	char* op = new char[5];
+	strncpy(op, argv[2], 3); op[3] = ' ';
+	cout << "operation " << op << endl;
+	cout << argv[3] << endl << argv[4] << endl;
 	char* name = strcat(op, argv[3]);
-	cout << name << endl;
+	cout << "command is " << name << endl;
 	while (true){
 		int fileNameSent = send(sockfd, name, 85, 0);
 		if (fileNameSent==-1){
@@ -97,22 +99,43 @@ int main(int argc, char *argv[])
 	}
 	cout << "sent" << endl;
 	int total = 0;
-	while (true){
-        bzero(buf, CHUNK_SIZE);
-        numbytes = recv(sockfd, buf, CHUNK_SIZE, MSG_WAITALL);
-		// cout << numbytes << "\n";
-        if (numbytes<=0){
-            break;
-        }
-        fwrite(buf, sizeof(char), numbytes, file);
-		total += numbytes;
-		this_thread::sleep_for(chrono::milliseconds(stoi(argv[3])));
-    }
+	if (op[0]=='g'){
+		FILE* file = fopen(argv[3], "w");
+		while (true){
+			bzero(buf, CHUNK_SIZE);
+			numbytes = recv(sockfd, buf, CHUNK_SIZE, MSG_WAITALL);
+			// cout << numbytes << "\n";
+			if (numbytes<=0){
+				break;
+			}
+			fwrite(buf, sizeof(char), numbytes, file);
+			total += numbytes;
+			this_thread::sleep_for(chrono::milliseconds(stoi(argv[4])));
+		}
 
-	buf[numbytes] = '\0';
-	cout << "Total "<< total << endl;
+		buf[numbytes] = '\0';
+		cout << "Total "<< total << endl;
 
-	close(sockfd);
+		close(sockfd);
+	}
+	else {
+		FILE* file = fopen(argv[3], "rb");
+		ssize_t num_bytes = 0;
+		ssize_t total = 0;
+		while ((num_bytes = fread(buf, sizeof (char), CHUNK_SIZE, file)) > 0){
+			// cout << "Read "<< num_bytes << endl;
+			int sent = send(sockfd, buf, num_bytes, MSG_WAITALL);
+			if (sent == -1) {
+				cerr << "Error in sending" << endl;
+				exit(3);
+			}
+			cout << buf << endl;
+			// cout << sent << endl;
+			total+=sent;
+		}
+		cout<<"Transfer Done: "<<total <<" bytes" <<endl;
+		close(sockfd);
+	}
 
 	return 0;
 }
