@@ -133,6 +133,8 @@ void del_from_pfds(vector<pollfd> &pfds, vector<connection> &cnn, int i, int *fd
     // Copy the one from the end over this one
     pfds[i] = pfds[*fd_count-1];
     cnn[i] = cnn[*fd_count - 1];
+    pfds.pop_back();
+    cnn.pop_back();
 
     (*fd_count)--;
 }

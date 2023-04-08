@@ -90,7 +90,7 @@ int main(int argc, char *argv[])
 	char* name = strcat(op, argv[3]);
 	cout << "command is " << name << endl;
 	while (true){
-		int fileNameSent = send(sockfd, name, 85, 0);
+		int fileNameSent = send(sockfd, name, 80, 0);
 		if (fileNameSent==-1){
 			cerr << "Could not send file name, retrying\n";
 			continue;
