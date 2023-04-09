@@ -12,13 +12,14 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <chrono>
+#include <poll.h>
 #include <thread>
 
 
 #include <arpa/inet.h>
 using namespace std;
 
-#define CHUNK_SIZE 512 // max number of bytes we can get at once 
+#define CHUNK_SIZE 1024 // max number of bytes we can get at once 
 
 // get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa)
@@ -46,7 +47,7 @@ int main(int argc, char *argv[])
 
 	char* hostname = strtok(argv[1], ":");
     char* port = strtok (NULL, ":");
-    cout << hostname << " port " << port << endl;
+    // cout << hostname << " port " << port << endl;
     memset(&hints, 0, sizeof hints);
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
@@ -74,43 +75,50 @@ int main(int argc, char *argv[])
 	}
 
 	if (p == NULL) {
-		fprintf(stderr, "client: failed to connect\n");
-		return 2;
+		cerr << "client: failed to connect\n";
+		exit(2);
 	}
 
 	inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr),
 			s, sizeof s);
-	printf("client: connecting to %s\n", s);
+	printf("ConnectDone: %s:%d\n", s, stoi(port));
 
 	freeaddrinfo(servinfo); // all done with this structure
 
 	char get[] = "get ";
 	char* name = strcat(get, argv[2]);
-	cout << name << endl;
+	// cout << name << endl;
 	while (true){
-		int fileNameSent = send(sockfd, name, 85, 0);
+		int fileNameSent = send(sockfd, name, 80, 0);
 		if (fileNameSent==-1){
 			cerr << "Could not send file name, retrying\n";
 			continue;
 		}
 		break;
 	}
-	cout << "sent" << endl;
+
+	pollfd* poller = new pollfd;
+	poller->fd = sockfd;
+	poller->events = POLLIN;
+
 	int total = 0;
 	while (true){
-        bzero(buf, CHUNK_SIZE);
-        numbytes = recv(sockfd, buf, CHUNK_SIZE, MSG_WAITALL);
-		// cout << numbytes << "\n";
-        if (numbytes<=0){
-            break;
-        }
-        fwrite(buf, sizeof(char), numbytes, file);
-		total += numbytes;
-		this_thread::sleep_for(chrono::milliseconds(stoi(argv[3])));
+		int poll_count = poll(poller, 1, -1);
+		if (poller->revents & POLLIN){
+			bzero(buf, CHUNK_SIZE);
+			numbytes = recv(poller->fd, buf, CHUNK_SIZE, MSG_WAITALL);
+			// cout << numbytes << "\n";
+			if (numbytes<=0){
+				break;
+			}
+			fwrite(buf, sizeof(char), numbytes, file);
+			total += numbytes;
+			this_thread::sleep_for(chrono::milliseconds(stoi(argv[3])));
+		}
     }
 
 	buf[numbytes] = '\0';
-	cout << "Total "<< total << endl;
+	cout << "FileWritten: " << total << " bytes\n";
 
 	close(sockfd);
 

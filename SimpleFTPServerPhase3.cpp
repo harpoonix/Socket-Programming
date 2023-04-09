@@ -79,7 +79,7 @@ int get_listener_socket(char* port)
         return -1;
     }
     else {
-        cout << "Bind succesful: "<< p->ai_addr << endl;
+		cout << "BindDone: " << port << endl;
     }
 
     freeaddrinfo(ai); // All done with this
@@ -89,10 +89,8 @@ int get_listener_socket(char* port)
         return -1;
     }
     else {
-		cout << "Listen successful" << endl;
+		cout << "ListenDone: " << port << endl;
 	}
-
-	cout << "Server.... waiting for connections" <<endl;
 
     return listener;
 }
@@ -183,12 +181,9 @@ int main(int argc, char* argv[])
                     } else {
                         add_to_pfds(pfds, newfd, &fd_count, &fd_size);
 
-                        printf("pollserver: new connection from %s on "
-                            "socket %d\n",
-                            inet_ntop(remoteaddr.ss_family,
-                                get_in_addr((sockaddr*)&remoteaddr),
-                                remoteIP, INET6_ADDRSTRLEN),
-                            newfd);
+                        inet_ntop(remoteaddr.ss_family, get_in_addr((sockaddr*)&remoteaddr), 
+                        remoteIP, INET6_ADDRSTRLEN);
+                        cout << ("Client: ") << remoteIP  << ":" << ntohs(((sockaddr_in*)&remoteaddr)->sin_port) <<endl;
                     }
                 } else {
                     // If not the listener, we're just a regular client
@@ -212,7 +207,6 @@ int main(int argc, char* argv[])
 
                     } else {
                         // We got some good data from a client
-                        cout << "Received data from client" << endl;
                         if (!is_correct_command(filename)){
                             cout << "UnknownCmd\n";
                             cout << filename << endl;
