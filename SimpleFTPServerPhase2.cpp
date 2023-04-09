@@ -111,18 +111,18 @@ int main(int argc, char* argv[])
 		exit(2);
 	}
 	else {
-		cout << "Bind successful" << p->ai_addr << endl;
+		cout << "BindDone: " << argv[1] << endl;
 	}
 
 	if (listen(sockfd, BACKLOG) == -1) {
-		perror("listen");
+		perror("listen error");
 		exit(1);
 	}
 	else {
-		cout << "Listen successful" << endl;
+		cout << "ListenDone: " << argv[1] << endl;
 	}
 
-	cout << "Server.... waiting for connections" <<endl;
+	// cout << "Server.... waiting for connections" <<endl;
 
 	// sa.sa_handler = sigchld_handler; // reap all dead processes
 	// sigemptyset(&sa.sa_mask);
@@ -135,7 +135,7 @@ int main(int argc, char* argv[])
 	while(1) {  // main accept() loop
 		sin_size = sizeof their_addr;
 		new_fd = accept(sockfd, (struct sockaddr *)&their_addr, &sin_size);
-		cout << "New connection request from " << (sockaddr*) &their_addr << endl;
+		// cout << "New connection request from " << (sockaddr*) &their_addr << endl;
 		if (new_fd == -1) {
 			perror("accept");
 			continue;
@@ -144,7 +144,8 @@ int main(int argc, char* argv[])
 		inet_ntop(their_addr.ss_family,
 			get_in_addr((struct sockaddr *)&their_addr),
 			s, sizeof s);
-		cout << ("server: got connection from ") << s <<endl;
+		// cout << ("server: got connection from ") << s <<endl;
+		cout << ("Client: ") << s  << ":" << ntohs(((sockaddr_in*)&their_addr)->sin_port) <<endl;
 		char filename[80];
 		int is_file = recv(new_fd, filename, 80, 0);
 
@@ -179,7 +180,6 @@ int main(int argc, char* argv[])
 			}
 			cout<<"Transfer Done: "<<total <<" bytes" <<endl;
 		}
-		sleep(1);
 		close(new_fd);  // parent doesn't need this
 	}
 
