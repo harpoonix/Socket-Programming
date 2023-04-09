@@ -85,7 +85,7 @@ int main(int argc, char *argv[])
 
 	freeaddrinfo(servinfo); // all done with this structure
 
-	char get[] = "get ";
+	char get[80] = "get ";
 	char* name = strcat(get, argv[2]);
 	// cout << name << endl;
 	while (true){
@@ -121,6 +121,7 @@ int main(int argc, char *argv[])
 	cout << "FileWritten: " << total << " bytes\n";
 
 	close(sockfd);
+	fclose(file);
 
 	return 0;
 }

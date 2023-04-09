@@ -154,7 +154,7 @@ int main(int argc, char* argv[])
 			cout << filename << endl;
 			cerr << "The command should be of the form: get <fileName>\n";
 			close(new_fd);
-			exit(3);
+			continue;
 		}
 		cout << "File Requested: "<<filename + 4 << endl;
 		file = fopen(filename + 4, "rb");
@@ -162,7 +162,7 @@ int main(int argc, char* argv[])
 			cout << "FileTransferFail\n";
 			cerr << "File does not exist" <<endl;
 			close(new_fd);
-			exit(3);
+			continue;
 		}
 
 		if (!fork()){
@@ -173,7 +173,7 @@ int main(int argc, char* argv[])
 				int sent = send(new_fd, file_data, num_bytes, MSG_WAITALL);
 				if (sent == -1) {
 					cerr << "Error in sending" << endl;
-					exit(3);
+					break;
 				}
 				// cout << sent << endl;
 				total+=sent;

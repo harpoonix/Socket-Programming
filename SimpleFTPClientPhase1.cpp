@@ -95,6 +95,7 @@ int main(int argc, char *argv[])
 	buf[numbytes] = '\0';
 
 	close(sockfd);
+	fclose(file);
 	cout << "FileWritten: " << total << " bytes\n";
 
 	return 0;

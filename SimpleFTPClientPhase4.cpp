@@ -74,7 +74,7 @@ int main(int argc, char *argv[])
 
 	if (p == NULL) {
 		fprintf(stderr, "client: failed to connect\n");
-		return 2;
+		exit(2);
 	}
 
 	inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr),
@@ -83,21 +83,18 @@ int main(int argc, char *argv[])
 
 	freeaddrinfo(servinfo); // all done with this structure
 
-	char* op = new char[5];
+	char op[80];
+	memset(op, '\0', sizeof(op));
 	strncpy(op, argv[2], 3); op[3] = ' ';
-	cout << "operation " << op << endl;
-	cout << argv[3] << endl << argv[4] << endl;
-	char* name = strcat(op, argv[3]);
-	cout << "command is " << name << endl;
+	strcat(op, argv[3]);
 	while (true){
-		int fileNameSent = send(sockfd, name, 80, 0);
+		int fileNameSent = send(sockfd, op, 80, 0);
 		if (fileNameSent==-1){
 			cerr << "Could not send file name, retrying\n";
 			continue;
 		}
 		break;
 	}
-	cout << "sent" << endl;
 	int total = 0;
 	if (op[0]=='g'){
 		FILE* file = fopen(argv[3], "w");
@@ -113,13 +110,15 @@ int main(int argc, char *argv[])
 			this_thread::sleep_for(chrono::milliseconds(stoi(argv[4])));
 		}
 
-		buf[numbytes] = '\0';
-		cout << "Total "<< total << endl;
+		cout << "FileWritten: " << total << " bytes\n";
 
-		close(sockfd);
+		fclose(file);
 	}
 	else {
 		FILE* file = fopen(argv[3], "rb");
+		if (file == NULL){
+			exit(3);
+		}
 		ssize_t num_bytes = 0;
 		ssize_t total = 0;
 		while ((num_bytes = fread(buf, sizeof (char), CHUNK_SIZE, file)) > 0){
@@ -127,15 +126,13 @@ int main(int argc, char *argv[])
 			int sent = send(sockfd, buf, num_bytes, MSG_WAITALL);
 			if (sent == -1) {
 				cerr << "Error in sending" << endl;
-				exit(3);
+				break;
 			}
-			cout << buf << endl;
-			// cout << sent << endl;
 			total+=sent;
 		}
-		cout<<"Transfer Done: "<<total <<" bytes" <<endl;
-		close(sockfd);
+		fclose(file);
 	}
+	close(sockfd);
 
 	return 0;
 }

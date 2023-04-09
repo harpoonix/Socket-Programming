@@ -142,7 +142,7 @@ int main(int argc, char* argv[])
 
     if (listener == -1) {
         fprintf(stderr, "error getting listening socket\n");
-        exit(1);
+        exit(2);
     }
 
     vector<pollfd> pfds;
@@ -158,7 +158,7 @@ int main(int argc, char* argv[])
         int poll_count = poll(&pfds[0], fd_count, -1);
 
         if (poll_count == -1) {
-            perror("poll");
+            perror("poll error");
             exit(1);
         }
 
@@ -213,7 +213,7 @@ int main(int argc, char* argv[])
                             cerr << "The command should be of the form: get <fileName>\n";
                             close(pfds[i].fd);
                             del_from_pfds(pfds, i, &fd_count);
-                            exit(3);
+                            continue;
                         }
                         cout << "File Requested: "<< filename + 4 << endl;
                         FILE* file = fopen(filename + 4, "rb");
@@ -222,7 +222,7 @@ int main(int argc, char* argv[])
                             cerr << "File does not exist" <<endl;
                             close(pfds[i].fd);
                             del_from_pfds(pfds, i, &fd_count);
-                            exit(3);
+                            continue;
                         }
 
                         // Now send the file
@@ -232,7 +232,7 @@ int main(int argc, char* argv[])
                             int sent = send(pfds[i].fd, file_data, num_bytes, MSG_WAITALL);
                             if (sent == -1) {
                                 cerr << "Error in sending" << endl;
-                                exit(3);
+                                break;
                             }
                             // cout << sent << endl;
                             total+=sent;

@@ -85,7 +85,7 @@ int main(int argc, char *argv[])
 	char* name = strcat(get, argv[2]);
 	// cout << name << endl;
 	while (true){
-		int fileNameSent = send(sockfd, name, 85, 0);
+		int fileNameSent = send(sockfd, name, 80, 0);
 		if (fileNameSent==-1){
 			cerr << "Could not send file name, retrying\n";
 			continue;
@@ -108,6 +108,7 @@ int main(int argc, char *argv[])
 	cout << "FileWritten: " << total << " bytes\n";
 
 	close(sockfd);
+	fclose(file);
 
 	return 0;
 }

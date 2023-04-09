@@ -94,7 +94,7 @@ int get_listener_socket(char* port)
         return -1;
     }
     else {
-        cout << "Bind succesful: "<< p->ai_addr << endl;
+		cout << "BindDone: " << port << endl;
     }
 
     freeaddrinfo(ai); // All done with this
@@ -104,10 +104,8 @@ int get_listener_socket(char* port)
         return -1;
     }
     else {
-		cout << "Listen successful" << endl;
+		cout << "ListenDone: " << port << endl;
 	}
-
-	cout << "Server.... waiting for connections" <<endl;
 
     return listener;
 }
@@ -143,7 +141,7 @@ void del_from_pfds(vector<pollfd> &pfds, vector<connection> &cnn, int i, int *fd
 int main(int argc, char* argv[])
 {
     if (argc!=2){
-		cerr << "Usage: ./SimpleFTPServerPhase3 portNum" << endl;
+		cerr << "Usage: ./SimpleFTPServerPhase4 portNum" << endl;
 		exit(1);
 	}
     int listener;     // Listening socket descriptor
@@ -166,7 +164,7 @@ int main(int argc, char* argv[])
 
     if (listener == -1) {
         fprintf(stderr, "error getting listening socket\n");
-        exit(1);
+        exit(2);
     }
 
     vector<pollfd> pfds;
@@ -185,7 +183,7 @@ int main(int argc, char* argv[])
         int poll_count = poll(&pfds[0], fd_count, -1);
 
         if (poll_count == -1) {
-            perror("poll");
+            perror("poll error");
             exit(1);
         }
 
@@ -208,17 +206,12 @@ int main(int argc, char* argv[])
                     } else {
                         add_to_pfds(pfds, connections, newfd, &fd_count, &fd_size);
 
-                        printf("pollserver: new connection from %s on "
-                            "socket %d\n",
-                            inet_ntop(remoteaddr.ss_family,
-                                get_in_addr((sockaddr*)&remoteaddr),
-                                remoteIP, INET6_ADDRSTRLEN),
-                            newfd);
+                        inet_ntop(remoteaddr.ss_family, get_in_addr((sockaddr*)&remoteaddr), 
+                        remoteIP, INET6_ADDRSTRLEN);
+                        cout << ("Client: ") << remoteIP  << ":" << ntohs(((sockaddr_in*)&remoteaddr)->sin_port) <<endl;
                     }
                 } else {
-                    cout << "Not the listener" << endl;
                     if (!connections[i].getfile){
-                        cout << "Getting command" << endl;
                         // If not the listener, we're just a regular client
                         char filename[80];
                         int nbytes = recv(pfds[i].fd, filename, 80, 0);
@@ -240,14 +233,13 @@ int main(int argc, char* argv[])
 
                         } else {
                             // We got some good data from a client
-                            cout << "Received data from client " << filename << endl;
                             if (!is_correct_command(filename, true) && !is_correct_command(filename, false)){
                                 cout << "UnknownCmd\n";
                                 cout << filename << endl;
                                 cerr << "The command should be of the form: get/put <fileName>\n";
                                 close(pfds[i].fd);
                                 del_from_pfds(pfds, connections, i, &fd_count);
-                                exit(3);
+                                continue;
                             }
                             if (filename[0]=='g'){
                                 cout << "File Requested: "<< filename + 4 << endl;
@@ -257,7 +249,7 @@ int main(int argc, char* argv[])
                                     cerr << "File does not exist" <<endl;
                                     close(pfds[i].fd);
                                     del_from_pfds(pfds, connections, i, &fd_count);
-                                    exit(3);
+                                    continue;
                                 }
 
                                 // Now send the file
@@ -268,7 +260,8 @@ int main(int argc, char* argv[])
                                     int sent = send(pfds[i].fd, file_data, num_bytes, MSG_WAITALL);
                                     if (sent == -1) {
                                         cerr << "Error in sending" << endl;
-                                        exit(3);
+                                        fclose(file);
+                                        break;
                                     }
                                     // cout << sent << endl;
                                     total+=sent;
@@ -287,24 +280,23 @@ int main(int argc, char* argv[])
                         FILE* file = fopen(connections[i].filename, "w");
                         if (file==NULL){
                             cerr << "File " << connections[i].filename << " does not exist" << endl;
-                            exit(3);
+                            close(pfds[i].fd);
+                            del_from_pfds(pfds, connections, i, &fd_count);
+                            continue;
                         }
                         char buf[CHUNK_SIZE];
                         int total = 0;
                         int numbytes = 0;
-                        cout << connections[i].filename << " being received" << endl;
                         while (true){
                             bzero(buf, CHUNK_SIZE);
                             numbytes = recv(pfds[i].fd, buf, CHUNK_SIZE, 0);
-                            cout << numbytes << endl;
                             if (numbytes <= 0){
                                 break;
                             }
-                            cout << buf << endl;
                             fwrite(buf, sizeof(char), numbytes, file);
                             total+=numbytes;
                         }
-                        cout << "Total "<< total << " received" << endl;
+                        // cout << "Total "<< total << " received" << endl;
                         fclose(file);
                         close(pfds[i].fd);
                         del_from_pfds(pfds, connections, i, &fd_count);
