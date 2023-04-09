@@ -43,7 +43,7 @@ int main(int argc, char *argv[])
 
 	char* hostname = strtok(argv[1], ":");
     char* port = strtok (NULL, ":");
-    cout << hostname << " port " << port << endl;
+    // cout << hostname << " port " << port << endl;
     memset(&hints, 0, sizeof hints);
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
@@ -71,28 +71,31 @@ int main(int argc, char *argv[])
 	}
 
 	if (p == NULL) {
-		fprintf(stderr, "client: failed to connect\n");
-		return 2;
+		cerr << "client: failed to connect\n";
+		exit(2);
 	}
 
 	inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr),
 			s, sizeof s);
-	printf("client: connecting to %s\n", s);
+	printf("ConnectDone: %s:%d\n", s, stoi(port));
 
 	freeaddrinfo(servinfo); // all done with this structure
 
+	int total = 0;
 	while (true){
         bzero(buf, CHUNK_SIZE);
         numbytes = recv(sockfd, buf, CHUNK_SIZE, 0);
         if (numbytes<=0){
             break;
         }
+		total += numbytes;
         fwrite(buf, sizeof(char), numbytes, file);
     }
 
 	buf[numbytes] = '\0';
 
 	close(sockfd);
+	cout << "FileWritten: " << total << " bytes\n";
 
 	return 0;
 }
